@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGC LAB.CO | Inventory</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="site-nav">
+    <div class="brand">AGC LAB.CO</div>
+    <div class="nav-tools">
+      <input id="chemSearch" class="nav-search" type="search" placeholder="Search chemicals..." />
+    </div>
+    <div class="links">
+      <a href="/inventory" class="active">Inventory</a>
+      <a href="/logs-records">Logs & Records</a>
+      <a href="/about">About</a>
+      <a href="/" onclick="localStorage.removeItem('agc_user'); window.location.href='/'; return false;">Logout</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    <section class="toolbar">
+      <h1>Inventory Dashboard</h1>
+      <button id="openAddModal" class="btn primary">+ Add Chemical</button>
+    </section>
+
+    <section id="inventoryGrid" class="inventory-grid"></section>
+  </main>
+
+  <button id="lowStockBadge" class="low-stock-badge hidden" type="button">
+    <span id="lowStockCount">0</span> Low stock
+  </button>
+
+  <div id="chemicalModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h2 id="chemicalModalTitle">Add Chemical</h2>
+      <form id="chemicalForm">
+        <input id="chemicalId" type="hidden" />
+        <label>Chemical Name</label>
+        <input id="name" type="text" list="chemicalNameList" required />
+        <datalist id="chemicalNameList"></datalist>
+
+        <label>Chemical Formula</label>
+        <input id="formula" type="text" placeholder="e.g. H2SO4" />
+
+        <label>Current Quantity</label>
+        <input id="quantity" type="number" step="0.01" min="0" required />
+
+        <label>Max Capacity</label>
+        <input id="max_quantity" type="number" step="0.01" min="0" required />
+
+        <label>Low Stock Reminder Quantity</label>
+        <input id="low_stock_quantity" type="number" step="0.01" min="0" required />
+
+        <label>Category</label>
+        <input id="category" type="text" list="categoryList" placeholder="e.g. Solvent, Acid, Base" />
+        <datalist id="categoryList">
+          <option value="Solvent"></option>
+          <option value="Acid"></option>
+          <option value="Base"></option>
+          <option value="Oxidizer"></option>
+          <option value="Salt"></option>
+          <option value="Buffer"></option>
+          <option value="Indicator"></option>
+          <option value="Reagent"></option>
+        </datalist>
+
+        <label>Unit</label>
+        <input id="unit" type="text" list="unitList" placeholder="e.g. L, mL, g" />
+        <datalist id="unitList">
+          <option value="L"></option>
+          <option value="mL"></option>
+          <option value="g"></option>
+          <option value="kg"></option>
+          <option value="mg"></option>
+          <option value="pcs"></option>
+        </datalist>
+        <label>Hazard Info</label>
+        <select id="hazard_info" required>
+          <option value="⚠️ Warning">⚠️ Warning</option>
+          <option value="☣️ Biohazard">☣️ Biohazard</option>
+          <option value="🔥 Flammable">🔥 Flammable</option>
+          <option value="☠️ Toxic">☠️ Toxic</option>
+        </select>
+
+        <label>Room Number</label>
+        <input id="room_no" type="text" required />
+
+        <label>Expiry Date</label>
+        <input id="expiry_date" type="date" />
+
+        <div class="modal-actions">
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" id="closeChemicalModal" class="btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="txModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h2 id="txTitle">Transaction</h2>
+      <form id="txForm">
+        <input id="txChemicalId" type="hidden" />
+        <input id="txAction" type="hidden" />
+
+        <label>Name of person</label>
+        <input id="txUser" type="text" required />
+
+        <div id="txPurposeBlock">
+          <label>Purpose / Experiment</label>
+          <input id="txPurpose" type="text" placeholder="e.g. Titration lab" />
+        </div>
+
+        <div id="txClassBlock">
+          <label>Class / Section</label>
+          <input id="txClass" type="text" placeholder="e.g. B.Sc Chem - Sem 2" />
+        </div>
+
+        <label>Quantity</label>
+        <input id="txAmount" type="number" min="0.01" step="0.01" required />
+
+        <div class="modal-actions">
+          <button type="submit" class="btn primary">Confirm</button>
+          <button type="button" id="closeTxModal" class="btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <p>AGC LAB.CO | Chemical Inventory Management System</p>
+  </footer>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>

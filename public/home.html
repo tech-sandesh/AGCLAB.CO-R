@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGC LAB.CO | Home</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <nav class="site-nav">
+    <div class="brand">AGC LAB.CO</div>
+    <div class="links">
+      <a href="/inventory">Inventory</a>
+      <a href="/logs-records">Logs & Records</a>
+      <a href="/about">About</a>
+      <a href="/" onclick="localStorage.removeItem('agc_user'); window.location.href='/'; return false;">Logout</a>
+    </div>
+  </nav>
+
+  <main class="page home-page">
+    <section class="hero">
+      <h1>Chemical Inventory Management System</h1>
+      <p>Track stock, log usage and refills, and print chemical reports in one place.</p>
+    </section>
+
+    <section class="login-panel">
+      <h2>User Access</h2>
+      <p>Log in with your email and password to continue.</p>
+      <form id="loginForm" class="login-form">
+        <input id="loginEmail" name="email" type="email" placeholder="Email address" required />
+        <input id="loginPass" name="pass" type="password" placeholder="Password" required />
+        <button type="submit" class="btn primary">Login</button>
+      </form>
+      <div class="auth-links">
+        <button type="button" class="btn link" id="openSignup">Create account</button>
+        <button type="button" class="btn link" id="openForgot">Forgot password?</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>AGC LAB.CO | Chemical Inventory Management System</p>
+  </footer>
+
+  <div id="signupModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h2>Create Account</h2>
+      <form id="signupForm">
+        <label>Full Name</label>
+        <input id="signupName" type="text" required />
+
+        <label>Email</label>
+        <input id="signupEmail" type="email" required />
+
+        <label>Password</label>
+        <input id="signupPass" type="password" minlength="6" required />
+        <small class="hint">Minimum 6 characters.</small>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn primary">Create</button>
+          <button type="button" id="closeSignupModal" class="btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="forgotModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h2>Reset Password</h2>
+      <form id="forgotForm">
+        <label>Email</label>
+        <input id="forgotEmail" type="email" required />
+        <button type="submit" class="btn primary">Send Reset Code</button>
+      </form>
+      <div id="resetCodeBox" class="reset-code hidden"></div>
+      <form id="resetForm" class="reset-form hidden">
+        <label>Reset Code</label>
+        <input id="resetCode" type="text" required />
+
+        <label>New Password</label>
+        <input id="resetPass" type="password" minlength="6" required />
+
+        <div class="modal-actions">
+          <button type="submit" class="btn primary">Update Password</button>
+          <button type="button" id="closeForgotModal" class="btn">Close</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/main.js"></script>
+</body>
+</html>
