@@ -138,6 +138,17 @@ function validateChemical(body) {
   return null;
 }
 
+async function isDuplicateChemicalName(name, excludeId = null) {
+  const clean = String(name || "").trim().toLowerCase();
+  if (!clean) return false;
+  const params = excludeId ? [clean, Number(excludeId)] : [clean];
+  const sql = excludeId
+    ? "SELECT id FROM chemicals WHERE LOWER(name) = ? AND id <> ? LIMIT 1"
+    : "SELECT id FROM chemicals WHERE LOWER(name) = ? LIMIT 1";
+  const [rows] = await pool.query(sql, params);
+  return rows.length > 0;
+}
+
 async function sendLowStockEmail(chemical) {
   if (!transporter) return;
 
@@ -252,6 +263,9 @@ app.post("/api/chemicals", async (req, res) => {
   if (error) return res.status(400).json({ error });
 
   try {
+    if (await isDuplicateChemicalName(req.body.name)) {
+      return res.status(400).json({ error: "Chemical name already exists" });
+    }
     const { name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date } = req.body;
     const [result] = await pool.query(
       `INSERT INTO chemicals (name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date)
@@ -281,6 +295,9 @@ app.put("/api/chemicals/:id", async (req, res) => {
   if (error) return res.status(400).json({ error });
 
   try {
+    if (await isDuplicateChemicalName(req.body.name, req.params.id)) {
+      return res.status(400).json({ error: "Chemical name already exists" });
+    }
     const { name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date } = req.body;
     await pool.query(
       `UPDATE chemicals
@@ -384,7 +401,7 @@ app.post("/api/chemicals/:id/transaction", async (req, res) => {
 app.get("/api/logs", async (_, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT l.id, l.date, c.name AS chemical_name, l.action, l.amount, l.user, l.purpose, l.class_name, c.room_no
+      SELECT l.id, l.chemical_id, l.date, c.name AS chemical_name, l.action, l.amount, l.user, l.purpose, l.class_name, c.room_no, c.unit
       FROM logs l
       JOIN chemicals c ON c.id = l.chemical_id
       ORDER BY l.date DESC
@@ -398,7 +415,7 @@ app.get("/api/logs", async (_, res) => {
 app.get("/api/reports/low-stock", async (_, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT CURDATE() AS report_date, name AS chemical, quantity
+      SELECT CURDATE() AS report_date, name AS chemical, quantity, unit
       FROM chemicals
       WHERE quantity <= low_stock_quantity
       ORDER BY name ASC

@@ -8,7 +8,7 @@
 </head>
 <body>
   <nav class="site-nav">
-    <div class="brand">AGC LAB.CO</div>
+    <div class="brand brand-with-logo">AGC LAB.CO</div>
     <div class="nav-tools">
       <input id="chemSearch" class="nav-search" type="search" placeholder="Search chemicals..." />
     </div>
@@ -23,10 +23,35 @@
   <main class="page">
     <section class="toolbar">
       <h1>Inventory Dashboard</h1>
-      <button id="openAddModal" class="btn primary">+ Add Chemical</button>
+      <div class="toolbar-actions">
+        <div class="report-actions">
+          <div class="report-date-inputs">
+            From:<input id="stockFromDate" class="input-compact" type="date" />
+            To:<input id="stockToDate" class="input-compact" type="date" />
+          </div>
+          <button id="printInventoryStockBtn" class="btn">Inventry Report</button>
+        </div>
+        <button id="openAddModal" class="btn primary">+ Add Chemical</button>
+      </div>
     </section>
 
     <section id="inventoryGrid" class="inventory-grid"></section>
+
+    <section id="inventoryStockReportCard" class="report-card screen-only-hidden">
+      <h2>Inventory Stock Report</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Chemical</th>
+            <th>Total Stock</th>
+            <th>Last Refill Date</th>
+            <th>Expiry Date</th>
+            <th>Room</th>
+          </tr>
+        </thead>
+        <tbody id="inventoryStockTableBody"></tbody>
+      </table>
+    </section>
   </main>
 
   <button id="lowStockBadge" class="low-stock-badge hidden" type="button">
@@ -107,7 +132,7 @@
         <input id="txAction" type="hidden" />
 
         <label>Name of person</label>
-        <input id="txUser" type="text" required />
+        <input id="txUser" type="text" required readonly aria-readonly="true" title="Logged-in user" />
 
         <div id="txPurposeBlock">
           <label>Purpose / Experiment</label>

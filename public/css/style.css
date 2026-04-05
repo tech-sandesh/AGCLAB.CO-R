@@ -14,6 +14,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", Tahoma, sans-serif;
@@ -24,7 +28,7 @@ body {
 .site-nav {
   background: #083b32;
   color: #fff;
-  padding: 14px 24px;
+  padding: 8px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -39,6 +43,19 @@ body {
   font-weight: 700;
   letter-spacing: 0.4px;
 }
+
+.brand-with-logo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 12px 12px 10px 55px;
+  background-image: url("/assets/agc-logo.png");
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 55px 50px;
+}
+
 
 .links {
   display: flex;
@@ -70,6 +87,62 @@ body {
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 10px 24px rgba(2, 6, 23, 0.06);
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/assets/agc-logo.png");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 220px 220px;
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.about-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.about-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("/assets/agc-logo.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 280px 280px;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.about-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.report-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.report-card-header h2 {
+  margin: 0;
 }
 
 .home-page {
@@ -157,6 +230,33 @@ select {
   margin-bottom: 10px;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.report-date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-compact {
+  width: 140px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+}
+
 .banner {
   background: #fee2e2;
   color: #7f1d1d;
@@ -172,6 +272,10 @@ select {
 
 .hidden {
   display: none !important;
+}
+
+.screen-only-hidden {
+  display: none;
 }
 
 .inventory-grid {
@@ -344,8 +448,15 @@ select {
 
 .logs-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+}
+
+.report-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 table {
@@ -472,6 +583,10 @@ th {
 }
 
 @media print {
+  .screen-only-hidden {
+    display: block !important;
+  }
+
   .site-nav,
   .site-footer,
   .toolbar button {

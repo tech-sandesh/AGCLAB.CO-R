@@ -22,12 +22,12 @@
       <h1>Logs & Records</h1>
       <div>
         <button id="printLogsBtn" class="btn">Print Logs</button>
-        <button id="printLowStockBtn" class="btn">Print Stock Chemicals</button>
       </div>
     </section>
 
     <section class="logs-filters">
-      <input id="filterDate" type="date" />
+      <input id="filterDateFrom" type="date" />
+      <input id="filterDateTo" type="date" />
       <input id="filterClass" type="text" placeholder="Filter by class" />
       <input id="filterUser" type="text" placeholder="Filter by user" />
       <input id="filterChemical" type="text" placeholder="Filter by chemical" />
@@ -41,7 +41,7 @@
             <th>Date</th>
             <th>Chemical</th>
             <th>Action</th>
-            <th>Amount</th>
+            <th>Quantity</th>
             <th>User</th>
             <th>Purpose</th>
             <th>Class</th>
@@ -52,10 +52,13 @@
     </section>
 
     <section id="lowStockReportCard" class="report-card">
-      <h2>Low Stock / Wanted Chemicals Report</h2>
+      <div class="report-card-header">
+        <h2>Low Stock / Wanted Chemicals Report</h2>
+        <button id="printLowStockBtn" class="btn no-print">Print Order</button>
+      </div>
       <div class="no-print">
         <button id="addManualWantedBtn" class="btn" type="button">+ Add Manual Wanted Item</button>
-        <button id="clearManualWantedBtn" class="btn" type="button">Clear Manual Items</button>
+        <button id="clearManualWantedBtn" class="btn" type="button">Clear Existing Items</button>
       </div>
       <table>
         <thead>
@@ -63,7 +66,6 @@
             <th>Chemical</th>
             <th>Quantity</th>
             <th>Price</th>
-            <th>Signature</th>
           </tr>
         </thead>
         <tbody id="lowStockTableBody"></tbody>

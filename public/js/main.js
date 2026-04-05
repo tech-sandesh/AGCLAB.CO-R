@@ -131,6 +131,8 @@ let chemicalCache = [];
 let lowStockOnly = false;
 let searchTerm = "";
 let logsCache = [];
+let stockChemicals = [];
+let stockRefillsByChemical = new Map();
 
 function applyInventoryFilters() {
   const grid = byId("inventoryGrid");
@@ -245,7 +247,12 @@ function openTxModal(action, id, name) {
   byId("txAction").value = action;
   byId("txTitle").textContent = `${action === "use" ? "Use" : "Refill"} - ${name}`;
   const saved = getStoredUser();
-  if (saved && saved.name) byId("txUser").value = saved.name;
+  const txUserInput = byId("txUser");
+  if (txUserInput) {
+    const userLabel = (saved && (saved.name || saved.email)) || "";
+    txUserInput.value = userLabel;
+    txUserInput.readOnly = true;
+  }
   const purposeInput = byId("txPurpose");
   const classInput = byId("txClass");
   const purposeBlock = byId("txPurposeBlock");
@@ -265,10 +272,12 @@ function openTxModal(action, id, name) {
 async function submitTransaction(event) {
   event.preventDefault();
   const id = byId("txChemicalId").value;
+  const storedUser = getStoredUser();
+  const storedLabel = storedUser && (storedUser.name || storedUser.email);
   const payload = {
     action: byId("txAction").value,
     amount: Number(byId("txAmount").value),
-    user: byId("txUser").value.trim(),
+    user: (storedLabel || byId("txUser").value).trim(),
     purpose: byId("txPurpose").value.trim(),
     class_name: byId("txClass").value.trim()
   };
@@ -306,15 +315,20 @@ async function loadLogsReport() {
 function applyLogsFilters() {
   const body = byId("logsTableBody");
   if (!body) return;
-  const dateValue = byId("filterDate")?.value || "";
+  const fromValue = byId("filterDateFrom")?.value || "";
+  const toValue = byId("filterDateTo")?.value || "";
   const classValue = (byId("filterClass")?.value || "").toLowerCase().trim();
   const userValue = (byId("filterUser")?.value || "").toLowerCase().trim();
   const chemicalValue = (byId("filterChemical")?.value || "").toLowerCase().trim();
 
   const filtered = logsCache.filter((r) => {
-    if (dateValue) {
+    if (fromValue) {
       const rowDate = String(r.date || "").slice(0, 10);
-      if (rowDate !== dateValue) return false;
+      if (rowDate < fromValue) return false;
+    }
+    if (toValue) {
+      const rowDate = String(r.date || "").slice(0, 10);
+      if (rowDate > toValue) return false;
     }
     if (classValue && !String(r.class_name || "").toLowerCase().includes(classValue)) return false;
     if (userValue && !String(r.user || "").toLowerCase().includes(userValue)) return false;
@@ -327,6 +341,9 @@ function applyLogsFilters() {
     return;
   }
 
+  const totalQty = filtered.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const totalCount = filtered.length;
+
   body.innerHTML = filtered
     .map(
       (r) => `
@@ -334,13 +351,22 @@ function applyLogsFilters() {
         <td>${fmtDate(r.date)}</td>
         <td>${r.chemical_name}</td>
         <td>${r.action}</td>
-        <td>${r.amount}</td>
+        <td>${r.amount} ${escapeHtml(r.unit || "")}</td>
         <td>${r.user}</td>
         <td>${escapeHtml(r.purpose || "-")}</td>
         <td>${escapeHtml(r.class_name || "-")}</td>
       </tr>`
     )
-    .join("");
+    .join("") +
+    `
+      <tr>
+        <td colspan="1"></td>
+        <td><strong>Total chemicals: ${totalCount}</strong></td>
+        <td></td>
+        <td><strong>${totalQty.toFixed(2)} ${escapeHtml(filtered[0]?.unit || "")}</strong></td>
+        <td colspan="3"></td>
+      </tr>
+    `;
 }
 
 async function loadLowStockReport() {
@@ -350,15 +376,14 @@ async function loadLowStockReport() {
     const rows = await api("/api/reports/low-stock");
     const manualRows = getManualWantedRows();
     if (!rows.length && !manualRows.length) {
-      body.innerHTML = '<tr><td colspan="4">No low stock chemicals.</td></tr>';
+      body.innerHTML = '<tr><td colspan="3">No low stock chemicals.</td></tr>';
       return;
     }
     const autoHtml = rows.map(
       (r) => `
       <tr>
         <td>${escapeHtml(r.chemical)}</td>
-        <td>${r.quantity}</td>
-        <td></td>
+        <td>${r.quantity} ${escapeHtml(r.unit || "")}</td>
         <td></td>
       </tr>`
     );
@@ -368,10 +393,121 @@ async function loadLowStockReport() {
         <td>${escapeHtml(r.chemical)} (Manual)</td>
         <td>${escapeHtml(r.quantity)}</td>
         <td>${escapeHtml(r.price)}</td>
-        <td>${escapeHtml(r.signature)}</td>
       </tr>`
     );
-    body.innerHTML = autoHtml.concat(manualHtml).join("");
+    const allRows = rows.concat(manualRows);
+    const totalQty = allRows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+    const totalCount = allRows.length;
+    body.innerHTML =
+      autoHtml.concat(manualHtml).join("") +
+      `
+        <tr>
+          <td><strong>Total chemicals: ${totalCount}</strong></td>
+          <td><strong>${totalQty.toFixed(2)}</strong></td>
+          <td></td>
+        </tr>
+      `;
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="5" class="error">${error.message}</td></tr>`;
+  }
+}
+
+function buildRefillIndex(logs) {
+  const index = new Map();
+  logs
+    .filter((l) => l.action === "refill")
+    .forEach((l) => {
+      const id = Number(l.chemical_id);
+      if (!index.has(id)) index.set(id, []);
+      index.get(id).push(l);
+    });
+
+  for (const [, list] of index) {
+    list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+  return index;
+}
+
+function findLatestRefillInRange(refills, fromValue, toValue) {
+  if (!refills || !refills.length) return null;
+  for (const refill of refills) {
+    const rowDate = String(refill.date || "").slice(0, 10);
+    if (fromValue && rowDate < fromValue) continue;
+    if (toValue && rowDate > toValue) continue;
+    return refill.date;
+  }
+  return null;
+}
+
+function applyInventoryStockFilters() {
+  const body = byId("inventoryStockTableBody");
+  if (!body) return;
+  const fromValue = byId("stockFromDate")?.value || "";
+  const toValue = byId("stockToDate")?.value || "";
+  const term = searchTerm.toLowerCase().trim();
+
+  const rows = stockChemicals.map((c) => {
+    const refills = stockRefillsByChemical.get(Number(c.id)) || [];
+    const lastRefill = findLatestRefillInRange(refills, fromValue, toValue);
+    return {
+      name: c.name,
+      formula: c.formula,
+      category: c.category,
+      quantity: c.quantity,
+      unit: c.unit,
+      expiry_date: c.expiry_date,
+      room_no: c.room_no,
+      lastRefill
+    };
+  });
+
+  const filtered = rows.filter((r) => {
+    if (term) {
+      const haystack = `${r.name} ${r.formula || ""} ${r.category || ""} ${r.room_no || ""}`.toLowerCase();
+      if (!haystack.includes(term)) return false;
+    }
+    if (!fromValue && !toValue) return true;
+    return !!r.lastRefill;
+  });
+
+  if (!filtered.length) {
+    body.innerHTML = `<tr><td colspan="5">No records match the filters.</td></tr>`;
+    return;
+  }
+
+  const totalQty = filtered.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+  const totalCount = filtered.length;
+  const unitHint = filtered.find((r) => r.unit)?.unit || "";
+
+  body.innerHTML = filtered
+    .map(
+      (r) => `
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${r.quantity} ${escapeHtml(r.unit || "")}</td>
+        <td>${r.lastRefill ? fmtDate(r.lastRefill) : "-"}</td>
+        <td>${r.expiry_date ? String(r.expiry_date).slice(0, 10) : "-"}</td>
+        <td>${escapeHtml(r.room_no || "-")}</td>
+      </tr>`
+    )
+    .join("") +
+    `
+      <tr>
+        <td><strong>Total chemicals: ${totalCount}</strong></td>
+        <td><strong>${totalQty.toFixed(2)} ${escapeHtml(unitHint)}</strong></td>
+        <td colspan="3"></td>
+      </tr>
+    `;
+}
+
+async function loadInventoryStockReport() {
+  const body = byId("inventoryStockTableBody");
+  if (!body) return;
+  try {
+    const [chemicals, logs] = await Promise.all([api("/api/chemicals"), api("/api/logs")]);
+    stockChemicals = chemicals;
+    stockRefillsByChemical = buildRefillIndex(logs);
+    applyInventoryStockFilters();
   } catch (error) {
     body.innerHTML = `<tr><td colspan="5" class="error">${error.message}</td></tr>`;
   }
@@ -387,15 +523,16 @@ function printReportCard(cardId, title) {
     return;
   }
 
-  let cardHtml = card.outerHTML;
-  if (cardId === "lowStockReportCard") {
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = cardHtml;
-    const qtyCells = wrapper.querySelectorAll("tbody td:nth-child(2)");
-    qtyCells.forEach((cell) => {
-      cell.textContent = "";
-    });
-    cardHtml = wrapper.innerHTML;
+  const cardHtml = card.outerHTML;
+  const now = new Date();
+  const printDate = now.toLocaleString();
+  const reportCounterKey = "agc_report_no_counter";
+  let reportNo = 1;
+  try {
+    reportNo = Number(localStorage.getItem(reportCounterKey) || "0") + 1;
+    localStorage.setItem(reportCounterKey, String(reportNo));
+  } catch (_) {
+    reportNo = 1;
   }
 
   popup.document.write(`<!DOCTYPE html>
@@ -405,11 +542,49 @@ function printReportCard(cardId, title) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${title}</title>
   <link rel="stylesheet" href="/css/style.css" />
-  <style>body { background: #fff; margin: 24px; } .site-nav, .site-footer, .toolbar, .no-print { display: none !important; }</style>
+  <style>
+    body { background: #fff; margin: 24px; }
+    .site-nav, .site-footer, .toolbar, .no-print { display: none !important; }
+    .print-wrap { border: 1px solid #cbd5e1; padding: 18px; border-radius: 12px; }
+    .print-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+    .print-brand { display: flex; align-items: center; gap: 12px; }
+    .print-logo { width: 56px; height: 56px; object-fit: contain; }
+    .print-title { margin: 0; font-size: 1.15rem; }
+    .print-meta { text-align: right; font-size: 0.9rem; color: #334155; }
+    .print-address { font-size: 0.82rem; color: #475569; margin-top: 4px; max-width: 420px; }
+    .print-divider { height: 1px; background: #e2e8f0; margin: 10px 0 14px; }
+    .print-footer { margin-top: 18px; display: flex; justify-content: flex-end; }
+    .signature-box { text-align: right; min-width: 220px; }
+    .signature-line { border-bottom: 1px solid #111827; margin: 28px 0 6px; }
+  </style>
 </head>
 <body>
   <main class="page reports-page">
-    ${cardHtml}
+    <section class="print-wrap">
+      <div class="print-header">
+        <div class="print-brand">
+          <img src="/assets/agc-logo.png" alt="AGC LAB.CO logo" class="print-logo" />
+          <div>
+            <div class="brand">AGC LAB.CO</div>
+            <div class="hint">Chemical Inventory Management System</div>
+            <div class="print-address">Abasaheb Garware College of Arts and Science, Karve Rd, opp. Sahyadri Hospital, Kripali Society, Erandwane, Pune, Maharashtra 411004</div>
+          </div>
+        </div>
+        <div class="print-meta">
+          <div><strong>${title}</strong></div>
+          <div>Report No: ${reportNo}</div>
+          <div>Print Date: ${printDate}</div>
+        </div>
+      </div>
+      <div class="print-divider"></div>
+      ${cardHtml}
+      <div class="print-footer">
+        <div class="signature-box">
+          <div class="signature-line"></div>
+          <div>Authorized Signature</div>
+        </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>`);
@@ -424,6 +599,7 @@ function printReportCard(cardId, title) {
 function bindReportPrintEvents() {
   const printLogsBtn = byId('printLogsBtn');
   const printLowStockBtn = byId('printLowStockBtn');
+  const printInventoryStockBtn = byId('printInventoryStockBtn');
   const addManualWantedBtn = byId("addManualWantedBtn");
   const clearManualWantedBtn = byId("clearManualWantedBtn");
   if (printLogsBtn) {
@@ -431,6 +607,9 @@ function bindReportPrintEvents() {
   }
   if (printLowStockBtn) {
     printLowStockBtn.addEventListener('click', () => printReportCard('lowStockReportCard', 'Low Stock / Wanted Chemicals Report'));
+  }
+  if (printInventoryStockBtn) {
+    printInventoryStockBtn.addEventListener('click', () => printReportCard('inventoryStockReportCard', 'Inventory Stock Report'));
   }
   if (addManualWantedBtn) {
     addManualWantedBtn.addEventListener("click", async () => {
@@ -447,12 +626,22 @@ function bindReportPrintEvents() {
 }
 
 function bindLogsFilterEvents() {
-  const inputs = ["filterDate", "filterClass", "filterUser", "filterChemical"]
+  const inputs = ["filterDateFrom", "filterDateTo", "filterClass", "filterUser", "filterChemical"]
     .map((id) => byId(id))
     .filter(Boolean);
   inputs.forEach((input) => {
     input.addEventListener("input", applyLogsFilters);
     input.addEventListener("change", applyLogsFilters);
+  });
+}
+
+function bindInventoryReportFilters() {
+  const stockInputs = ["stockFromDate", "stockToDate"]
+    .map((id) => byId(id))
+    .filter(Boolean);
+  stockInputs.forEach((input) => {
+    input.addEventListener("input", applyInventoryStockFilters);
+    input.addEventListener("change", applyInventoryStockFilters);
   });
 }
 
@@ -512,6 +701,7 @@ function bindInventoryEvents() {
     searchInput.addEventListener("input", (event) => {
       searchTerm = event.target.value || "";
       applyInventoryFilters();
+      applyInventoryStockFilters();
     });
   }
   if (lowStockBadge) {
@@ -588,7 +778,10 @@ function init() {
     }
     initChemicalLibrary();
     bindInventoryEvents();
+    bindReportPrintEvents();
+    bindInventoryReportFilters();
     loadInventory();
+    loadInventoryStockReport();
     return;
   }
 
