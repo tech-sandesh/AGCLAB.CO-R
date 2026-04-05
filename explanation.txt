@@ -1,0 +1,44 @@
+﻿AGC LAB.CO – App Explanation (Inventory, Logs, Print, Login)
+
+1) Inventory Dashboard – How chemicals display
+- Page loads -> init() detects inventory page.
+- loadInventory() calls /api/chemicals, stores in chemicalCache.
+- applyInventoryFilters() filters cached data (search + low stock toggle).
+- renderCard() builds each chemical card HTML and inserts into #inventoryGrid.
+
+2) Search (Inventory)
+- Typing in #chemSearch updates searchTerm.
+- applyInventoryFilters() runs on chemicalCache (client-side/in-memory filtering).
+- It matches name, formula, category, room (case-insensitive).
+
+3) Low Stock Floating Button
+- HTML button: #lowStockBadge (hidden by default).
+- loadInventory() counts low-stock items and shows/hides badge + count.
+- Clicking badge toggles lowStockOnly and re-filters cards.
+
+4) Inventory Stock Report
+- loadInventoryStockReport() fetches /api/chemicals + /api/logs.
+- buildRefillIndex() maps refills per chemical and finds latest refill date.
+- applyInventoryStockFilters() renders report table rows.
+
+5) Logs Report
+- loadLogsReport() fetches /api/logs into logsCache.
+- applyLogsFilters() filters by date/class/user/chemical in the browser.
+- Renders rows into #logsTableBody and adds totals row.
+
+6) Login / Logout
+- Login: handleLogin() sends /api/login, stores agc_user in localStorage, redirects to /inventory.
+- Protected pages: if agc_user missing -> redirect to /.
+- Logout: clears agc_user in localStorage and redirects to /.
+
+7) Print / PDF Format
+- printReportCard() opens a new window with a print template:
+  - Header with logo, brand, address
+  - Report title, report number, print date
+  - The report card HTML (table)
+  - Signature line
+- Browser print dialog -> “Save as PDF” makes the PDF.
+
+Notes
+- Search and filters are client-side; no SQL search is called during typing.
+- Data is refreshed after add/edit/use/refill by calling loadInventory().
