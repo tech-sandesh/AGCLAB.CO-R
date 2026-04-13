@@ -20,7 +20,7 @@ function getDbConfig() {
       config: {
         host: parsed.hostname,
         port: parsed.port ? Number(parsed.port) : 3306,
-        user: decodeURIComponent(parsed.username || ""),
+        user: decodeURIComponent(parsed.username || "root"),
         password: decodeURIComponent(parsed.password || "")
       },
       dbName: nameFromUrl
@@ -464,11 +464,26 @@ app.get("/api/reports/low-stock", async (_, res) => {
 
 initDb()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running at http://localhost:${PORT}`);
-    });
+    app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
   })
   .catch((err) => {
-    console.error("DB init failed:", err.message);
+    const details = err
+      ? {
+          message: err.message,
+          code: err.code,
+          errno: err.errno,
+          sqlState: err.sqlState,
+          sql: err.sql
+        }
+      : {};
+    console.error("DB init failed:", details);
+    console.error("DB config:", {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      user: dbConfig.user,
+      database: dbName
+    });
     process.exit(1);
   });
