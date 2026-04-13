@@ -11,12 +11,40 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-const dbConfig = {
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || ""
-};
-const dbName = process.env.DB_NAME || "lab";
+function getDbConfig() {
+  const urlValue = process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.MYSQL_CONNECTION_STRING;
+  if (urlValue) {
+    const parsed = new URL(urlValue);
+    const nameFromUrl = decodeURIComponent(parsed.pathname || "").replace(/^\//, "");
+    return {
+      config: {
+        host: parsed.hostname,
+        port: parsed.port ? Number(parsed.port) : 3306,
+        user: decodeURIComponent(parsed.username || ""),
+        password: decodeURIComponent(parsed.password || "")
+      },
+      dbName: nameFromUrl
+    };
+  }
+
+  const dbName =
+    process.env.DB_NAME ||
+    process.env.MYSQLDATABASE ||
+    process.env.MYSQL_DATABASE ||
+    "lab";
+
+  return {
+    config: {
+      host: process.env.DB_HOST || process.env.MYSQLHOST || process.env.MYSQL_HOST || "localhost",
+      port: Number(process.env.DB_PORT || process.env.MYSQLPORT || process.env.MYSQL_PORT || 3306),
+      user: process.env.DB_USER || process.env.MYSQLUSER || process.env.MYSQL_USER || "root",
+      password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || ""
+    },
+    dbName
+  };
+}
+
+const { config: dbConfig, dbName } = getDbConfig();
 let pool;
 
 const transportEnabled =
@@ -39,14 +67,22 @@ const transporter = transportEnabled
   : null;
 
 async function initDb() {
-  const bootstrap = await mysql.createConnection(dbConfig);
-  const safeDbName = dbName.replace(/[^a-zA-Z0-9_]/g, "");
-  await bootstrap.query(`CREATE DATABASE IF NOT EXISTS \`${safeDbName}\``);
-  await bootstrap.end();
+  const resolvedDbName = String(dbName || "").trim();
+  if (!resolvedDbName) {
+    throw new Error("Database name is missing. Set DB_NAME or DATABASE_URL.");
+  }
+
+  try {
+    const bootstrap = await mysql.createConnection(dbConfig);
+    await bootstrap.query("CREATE DATABASE IF NOT EXISTS ??", [resolvedDbName]);
+    await bootstrap.end();
+  } catch (err) {
+    // Some hosted MySQL providers disallow CREATE DATABASE. Continue with existing DB.
+  }
 
   pool = mysql.createPool({
     ...dbConfig,
-    database: safeDbName,
+    database: resolvedDbName,
     waitForConnections: true,
     connectionLimit: 10
   });

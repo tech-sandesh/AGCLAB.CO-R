@@ -20,6 +20,19 @@ This project made with:
 7. Open browser:
    `http://localhost:3000`
 
+## Deploy On Railway
+1. Push this repo to GitHub.
+2. Create a new Railway project and connect the GitHub repo.
+3. Add a MySQL database plugin in Railway.
+4. Set environment variables in Railway:
+   - `DATABASE_URL` (preferred) or `MYSQL_URL` from the Railway MySQL plugin.
+   - If you prefer manual vars, set `MYSQLHOST`, `MYSQLPORT`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`.
+5. Deploy. Railway will run `npm start` automatically.
+
+Notes:
+- The app listens on `process.env.PORT`, which Railway provides.
+- Database creation is attempted, but if the provider blocks it the app will still continue using the existing database.
+
 ## Import Existing Database (XAMPP)
 You can import a `.sql` file into MySQL using either method below.
 
