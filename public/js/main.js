@@ -246,6 +246,12 @@ function openTxModal(action, id, name) {
   byId("txChemicalId").value = id;
   byId("txAction").value = action;
   byId("txTitle").textContent = `${action === "use" ? "Use" : "Refill"} - ${name}`;
+  const txAmountLabel = byId("txAmountLabel");
+  const chemical = chemicalCache.find((item) => item.id === Number(id));
+  const unitLabel = chemical && chemical.unit ? String(chemical.unit).trim() : "";
+  if (txAmountLabel) {
+    txAmountLabel.textContent = unitLabel ? `Quantity (${unitLabel})` : "Quantity";
+  }
   const saved = getStoredUser();
   const txUserInput = byId("txUser");
   if (txUserInput) {
