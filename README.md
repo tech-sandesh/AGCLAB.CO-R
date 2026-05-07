@@ -2,53 +2,32 @@
 
 This project made with:
 - Node.js + Express
-- MySQL
+- Supabase PostgreSQL
 - Plain HTML + CSS + JS
 
 ## Setup
 1. Open terminal in project folder:
-   `cd C:\Users\Sande\OneDrive\Desktop\LAB\AGC LAB.CO`
+   `cd C:\Users\Sande\OneDrive\Desktop\LAB\AGC LAB.CO R`
 2. Install packages:
    `npm install`
 3. Copy env file:
    - copy `.env.example` to `.env`
-4. Update DB values in `.env` if needed.
-5. Start the database (XAMPP):
-   - Open **phpMyAdmin** and create a database named `lab`
+4. In Supabase, open your project and copy the Postgres connection string.
+5. Set `DATABASE_URL` in `.env` to the Supabase connection string.
 6. Start server:
    `npm run dev`
 7. Open browser:
    `http://localhost:3000`
 
-## Deploy On Railway
-1. Push this repo to GitHub.
-2. Create a new Railway project and connect the GitHub repo.
-3. Add a MySQL database plugin in Railway.
-4. Set environment variables in Railway:
-   - `DATABASE_URL` (preferred) or `MYSQL_URL` from the Railway MySQL plugin.
-   - If you prefer manual vars, set `MYSQLHOST`, `MYSQLPORT`, `MYSQLUSER`, `MYSQLPASSWORD`, `MYSQLDATABASE`.
-5. Deploy. Railway will run `npm start` automatically.
+## Supabase Notes
+1. Use the Supabase Postgres connection string, not the API URL.
+2. The app auto-creates its tables on startup.
+3. If Supabase requires SSL, keep the URL in `DATABASE_URL`; the server enables SSL automatically for hosted Postgres URLs.
 
-Notes:
-- The app listens on `process.env.PORT`, which Railway provides.
-- Database creation is attempted, but if the provider blocks it the app will still continue using the existing database.
-
-## Import Existing Database (XAMPP)
-You can import a `.sql` file into MySQL using either method below.
-
-### Option A: phpMyAdmin (easiest)
-1. Open `http://localhost/phpmyadmin`.
-2. Select the database in the left sidebar.
-3. Click the **Import** tab.
-4. Choose Sql file inside project directory `.sql` file and click **Go**.
-
-### Option B: Command line
-1. Open **XAMPP Shell** or Command Prompt.
-2. Run:
-   ```
-   mysql -u root -p lab < "C:\path\to\your\file.sql"
-   ```
-   If root has no password, just press Enter when asked.
+## Migration From Old MySQL Data
+1. Old MySQL dump file is still in the repo as `lab.sql`.
+2. The app schema has been converted to PostgreSQL in code.
+3. Existing MySQL data needs to be exported/imported into Supabase separately if you want to keep old records.
 
 ## Login / Signup
 - Create an account from the home page (email + password).

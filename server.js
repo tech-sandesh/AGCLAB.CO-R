@@ -1,6 +1,6 @@
 const express = require("express");
 const path = require("path");
-const mysql = require("mysql2/promise");
+const { Pool } = require("pg");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 
@@ -12,39 +12,36 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 function getDbConfig() {
-  const urlValue = process.env.DATABASE_URL || process.env.MYSQL_URL || process.env.MYSQL_CONNECTION_STRING;
+  const urlValue =
+    process.env.DATABASE_URL ||
+    process.env.SUPABASE_DB_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_CONNECTION_STRING;
+
   if (urlValue) {
     const parsed = new URL(urlValue);
-    const nameFromUrl = decodeURIComponent(parsed.pathname || "").replace(/^\//, "");
+    const isLocal = ["localhost", "127.0.0.1"].includes(parsed.hostname);
+
     return {
-      config: {
-        host: parsed.hostname,
-        port: parsed.port ? Number(parsed.port) : 3306,
-        user: decodeURIComponent(parsed.username || "root"),
-        password: decodeURIComponent(parsed.password || "")
-      },
-      dbName: nameFromUrl
+      connectionString: urlValue,
+      ssl: parsed.protocol === "postgres:" || parsed.protocol === "postgresql:"
+        ? (isLocal ? false : { rejectUnauthorized: false })
+        : false
     };
   }
 
-  const dbName =
-    process.env.DB_NAME ||
-    process.env.MYSQLDATABASE ||
-    process.env.MYSQL_DATABASE ||
-    "lab";
-
   return {
-    config: {
-      host: process.env.DB_HOST || process.env.MYSQLHOST || process.env.MYSQL_HOST || "localhost",
-      port: Number(process.env.DB_PORT || process.env.MYSQLPORT || process.env.MYSQL_PORT || 3306),
-      user: process.env.DB_USER || process.env.MYSQLUSER || process.env.MYSQL_USER || "root",
-      password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || process.env.MYSQL_PASSWORD || ""
-    },
-    dbName
+    host: process.env.DB_HOST || "localhost",
+    port: Number(process.env.DB_PORT || 5432),
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "postgres",
+    ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false
   };
 }
 
-const { config: dbConfig, dbName } = getDbConfig();
+const dbConfig = getDbConfig();
 let pool;
 
 const transportEnabled =
@@ -67,64 +64,53 @@ const transporter = transportEnabled
   : null;
 
 async function initDb() {
-  const resolvedDbName = String(dbName || "").trim();
-  if (!resolvedDbName) {
-    throw new Error("Database name is missing. Set DB_NAME or DATABASE_URL.");
-  }
-
-  try {
-    const bootstrap = await mysql.createConnection(dbConfig);
-    await bootstrap.query("CREATE DATABASE IF NOT EXISTS ??", [resolvedDbName]);
-    await bootstrap.end();
-  } catch (err) {
-    // Some hosted MySQL providers disallow CREATE DATABASE. Continue with existing DB.
-  }
-
-  pool = mysql.createPool({
+  pool = new Pool({
     ...dbConfig,
-    database: resolvedDbName,
-    waitForConnections: true,
-    connectionLimit: 10
+    max: 10
   });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chemicals (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id BIGSERIAL PRIMARY KEY,
       name VARCHAR(150) NOT NULL,
       formula VARCHAR(120) NOT NULL DEFAULT '',
       category VARCHAR(120) NOT NULL DEFAULT '',
       unit VARCHAR(40) NOT NULL DEFAULT '',
-      quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
-      max_quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
-      low_stock_quantity DECIMAL(12,2) NOT NULL DEFAULT 0,
+      quantity NUMERIC(12,2) NOT NULL DEFAULT 0,
+      max_quantity NUMERIC(12,2) NOT NULL DEFAULT 0,
+      low_stock_quantity NUMERIC(12,2) NOT NULL DEFAULT 0,
       hazard_info VARCHAR(255) NOT NULL,
       room_no VARCHAR(50) NOT NULL,
       expiry_date DATE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INT AUTO_INCREMENT PRIMARY KEY,
+      id BIGSERIAL PRIMARY KEY,
       name VARCHAR(120) NOT NULL,
       email VARCHAR(190) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
       role VARCHAR(40) NOT NULL DEFAULT 'staff',
       reset_code VARCHAR(20),
-      reset_expires DATETIME,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      reset_expires TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   // Lightweight migrations for existing databases.
   const alterStatements = [
-    "ALTER TABLE chemicals ADD COLUMN formula VARCHAR(120) NOT NULL DEFAULT ''",
-    "ALTER TABLE chemicals ADD COLUMN category VARCHAR(120) NOT NULL DEFAULT ''",
-    "ALTER TABLE chemicals ADD COLUMN unit VARCHAR(40) NOT NULL DEFAULT ''",
-    "ALTER TABLE logs ADD COLUMN purpose VARCHAR(160)",
-    "ALTER TABLE logs ADD COLUMN class_name VARCHAR(120)"
+    "ALTER TABLE chemicals ADD COLUMN IF NOT EXISTS formula VARCHAR(120) NOT NULL DEFAULT ''",
+    "ALTER TABLE chemicals ADD COLUMN IF NOT EXISTS category VARCHAR(120) NOT NULL DEFAULT ''",
+    "ALTER TABLE chemicals ADD COLUMN IF NOT EXISTS unit VARCHAR(40) NOT NULL DEFAULT ''",
+    "ALTER TABLE chemicals ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    "ALTER TABLE chemicals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(20)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires TIMESTAMPTZ",
+    "ALTER TABLE logs ADD COLUMN IF NOT EXISTS purpose VARCHAR(160)",
+    "ALTER TABLE logs ADD COLUMN IF NOT EXISTS class_name VARCHAR(120)"
   ];
   for (const stmt of alterStatements) {
     try {
@@ -136,15 +122,14 @@ async function initDb() {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS logs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      chemical_id INT NOT NULL,
-      action ENUM('use','refill') NOT NULL,
-      amount DECIMAL(12,2) NOT NULL,
-      date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      user VARCHAR(120) NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      chemical_id BIGINT NOT NULL REFERENCES chemicals(id) ON DELETE CASCADE,
+      action VARCHAR(20) NOT NULL CHECK (action IN ('use', 'refill')),
+      amount NUMERIC(12,2) NOT NULL,
+      date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "user" VARCHAR(120) NOT NULL,
       purpose VARCHAR(160),
-      class_name VARCHAR(120),
-      FOREIGN KEY (chemical_id) REFERENCES chemicals(id) ON DELETE CASCADE
+      class_name VARCHAR(120)
     )
   `);
 }
@@ -179,9 +164,9 @@ async function isDuplicateChemicalName(name, excludeId = null) {
   if (!clean) return false;
   const params = excludeId ? [clean, Number(excludeId)] : [clean];
   const sql = excludeId
-    ? "SELECT id FROM chemicals WHERE LOWER(name) = ? AND id <> ? LIMIT 1"
-    : "SELECT id FROM chemicals WHERE LOWER(name) = ? LIMIT 1";
-  const [rows] = await pool.query(sql, params);
+    ? "SELECT id FROM chemicals WHERE LOWER(name) = $1 AND id <> $2 LIMIT 1"
+    : "SELECT id FROM chemicals WHERE LOWER(name) = $1 LIMIT 1";
+  const { rows } = await pool.query(sql, params);
   return rows.length > 0;
 }
 
@@ -210,13 +195,13 @@ app.post("/api/signup", async (req, res) => {
 
   try {
     const passwordHash = hashPassword(password);
-    const [result] = await pool.query(
-      "INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)",
+    const { rows } = await pool.query(
+      "INSERT INTO users (name, email, password_hash, role) VALUES ($1,$2,$3,$4) RETURNING id",
       [name, email, passwordHash, "staff"]
     );
-    return res.status(201).json({ ok: true, user: { id: result.insertId, name, email, role: "staff" } });
+    return res.status(201).json({ ok: true, user: { id: rows[0].id, name, email, role: "staff" } });
   } catch (err) {
-    if (err.code === "ER_DUP_ENTRY") return res.status(400).json({ error: "Email already registered" });
+    if (err.code === "23505") return res.status(400).json({ error: "Email already registered" });
     return res.status(500).json({ error: err.message });
   }
 });
@@ -227,7 +212,7 @@ app.post("/api/login", async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
 
   try {
-    const [rows] = await pool.query("SELECT id, name, email, password_hash, role FROM users WHERE email = ?", [email]);
+    const { rows } = await pool.query("SELECT id, name, email, password_hash, role FROM users WHERE email = $1", [email]);
     if (!rows.length) return res.status(401).json({ error: "Invalid credentials" });
     const user = rows[0];
     if (!verifyPassword(password, user.password_hash)) return res.status(401).json({ error: "Invalid credentials" });
@@ -242,12 +227,12 @@ app.post("/api/forgot-password", async (req, res) => {
   if (!email) return res.status(400).json({ error: "Email is required" });
 
   try {
-    const [rows] = await pool.query("SELECT id FROM users WHERE email = ?", [email]);
+    const { rows } = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (!rows.length) return res.json({ ok: true, code: null });
 
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expires = new Date(Date.now() + 15 * 60 * 1000);
-    await pool.query("UPDATE users SET reset_code = ?, reset_expires = ? WHERE email = ?", [code, expires, email]);
+    await pool.query("UPDATE users SET reset_code = $1, reset_expires = $2 WHERE email = $3", [code, expires, email]);
 
     return res.json({ ok: true, code });
   } catch (err) {
@@ -262,7 +247,7 @@ app.post("/api/reset-password", async (req, res) => {
   if (!email || !code || !newPassword) return res.status(400).json({ error: "Email, code, and new password are required" });
 
   try {
-    const [rows] = await pool.query("SELECT id, reset_code, reset_expires FROM users WHERE email = ?", [email]);
+    const { rows } = await pool.query("SELECT id, reset_code, reset_expires FROM users WHERE email = $1", [email]);
     if (!rows.length) return res.status(400).json({ error: "Invalid code or email" });
     const user = rows[0];
     if (!user.reset_code || user.reset_code !== code) return res.status(400).json({ error: "Invalid code or email" });
@@ -272,7 +257,7 @@ app.post("/api/reset-password", async (req, res) => {
 
     const passwordHash = hashPassword(newPassword);
     await pool.query(
-      "UPDATE users SET password_hash = ?, reset_code = NULL, reset_expires = NULL WHERE id = ?",
+      "UPDATE users SET password_hash = $1, reset_code = NULL, reset_expires = NULL WHERE id = $2",
       [passwordHash, user.id]
     );
     return res.json({ ok: true });
@@ -283,7 +268,7 @@ app.post("/api/reset-password", async (req, res) => {
 
 app.get("/api/chemicals", async (_, res) => {
   try {
-    const [rows] = await pool.query(`
+    const { rows } = await pool.query(`
       SELECT id, name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date
       FROM chemicals
       ORDER BY name ASC
@@ -303,9 +288,10 @@ app.post("/api/chemicals", async (req, res) => {
       return res.status(400).json({ error: "Chemical name already exists" });
     }
     const { name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date } = req.body;
-    const [result] = await pool.query(
+    const { rows } = await pool.query(
       `INSERT INTO chemicals (name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
       [
         name,
         formula || "",
@@ -319,7 +305,6 @@ app.post("/api/chemicals", async (req, res) => {
         expiry_date || null
       ]
     );
-    const [rows] = await pool.query("SELECT * FROM chemicals WHERE id = ?", [result.insertId]);
     return res.status(201).json(rows[0]);
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -335,10 +320,11 @@ app.put("/api/chemicals/:id", async (req, res) => {
       return res.status(400).json({ error: "Chemical name already exists" });
     }
     const { name, formula, category, unit, quantity, max_quantity, low_stock_quantity, hazard_info, room_no, expiry_date } = req.body;
-    await pool.query(
+    const { rows } = await pool.query(
       `UPDATE chemicals
-       SET name = ?, formula = ?, category = ?, unit = ?, quantity = ?, max_quantity = ?, low_stock_quantity = ?, hazard_info = ?, room_no = ?, expiry_date = ?
-       WHERE id = ?`,
+       SET name = $1, formula = $2, category = $3, unit = $4, quantity = $5, max_quantity = $6, low_stock_quantity = $7, hazard_info = $8, room_no = $9, expiry_date = $10, updated_at = NOW()
+       WHERE id = $11
+       RETURNING *`,
       [
         name,
         formula || "",
@@ -353,7 +339,6 @@ app.put("/api/chemicals/:id", async (req, res) => {
         Number(req.params.id)
       ]
     );
-    const [rows] = await pool.query("SELECT * FROM chemicals WHERE id = ?", [Number(req.params.id)]);
     return res.json(rows[0]);
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -362,7 +347,7 @@ app.put("/api/chemicals/:id", async (req, res) => {
 
 app.delete("/api/chemicals/:id", async (req, res) => {
   try {
-    await pool.query("DELETE FROM chemicals WHERE id = ?", [Number(req.params.id)]);
+    await pool.query("DELETE FROM chemicals WHERE id = $1", [Number(req.params.id)]);
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -383,13 +368,13 @@ app.post("/api/chemicals/:id/transaction", async (req, res) => {
   if (action === "use" && !className) return res.status(400).json({ error: "Class is required for usage" });
   if (Number.isNaN(amount) || amount <= 0) return res.status(400).json({ error: "Amount must be greater than zero" });
 
-  const connection = await pool.getConnection();
+  const connection = await pool.connect();
   try {
-    await connection.beginTransaction();
+    await connection.query("BEGIN");
 
-    const [chemRows] = await connection.query("SELECT * FROM chemicals WHERE id = ? FOR UPDATE", [id]);
+    const { rows: chemRows } = await connection.query("SELECT * FROM chemicals WHERE id = $1 FOR UPDATE", [id]);
     if (!chemRows.length) {
-      await connection.rollback();
+      await connection.query("ROLLBACK");
       return res.status(404).json({ error: "Chemical not found" });
     }
 
@@ -399,25 +384,25 @@ app.post("/api/chemicals/:id/transaction", async (req, res) => {
     if (action === "use") {
       newQuantity -= amount;
       if (newQuantity < 0) {
-        await connection.rollback();
+        await connection.query("ROLLBACK");
         return res.status(400).json({ error: "Not enough stock for this usage amount" });
       }
     } else {
       newQuantity += amount;
       if (newQuantity > Number(chemical.max_quantity)) {
-        await connection.rollback();
+        await connection.query("ROLLBACK");
         return res.status(400).json({ error: "Refill amount exceeds max quantity" });
       }
     }
 
-    await connection.query("UPDATE chemicals SET quantity = ? WHERE id = ?", [newQuantity, id]);
+    await connection.query("UPDATE chemicals SET quantity = $1, updated_at = NOW() WHERE id = $2", [newQuantity, id]);
     await connection.query(
-      "INSERT INTO logs (chemical_id, action, amount, user, purpose, class_name) VALUES (?,?,?,?,?,?)",
+      "INSERT INTO logs (chemical_id, action, amount, \"user\", purpose, class_name) VALUES ($1,$2,$3,$4,$5,$6)",
       [id, action, amount, user, purpose || null, className || null]
     );
-    await connection.commit();
+    await connection.query("COMMIT");
 
-    const [updatedRows] = await pool.query("SELECT * FROM chemicals WHERE id = ?", [id]);
+    const { rows: updatedRows } = await pool.query("SELECT * FROM chemicals WHERE id = $1", [id]);
     const updated = updatedRows[0];
     const isLowStock = Number(updated.quantity) <= Number(updated.low_stock_quantity);
 
@@ -427,7 +412,7 @@ app.post("/api/chemicals/:id/transaction", async (req, res) => {
 
     return res.json({ ok: true, chemical: updated, isLowStock });
   } catch (err) {
-    await connection.rollback();
+    await connection.query("ROLLBACK");
     return res.status(500).json({ error: err.message });
   } finally {
     connection.release();
@@ -436,8 +421,8 @@ app.post("/api/chemicals/:id/transaction", async (req, res) => {
 
 app.get("/api/logs", async (_, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT l.id, l.chemical_id, l.date, c.name AS chemical_name, l.action, l.amount, l.user, l.purpose, l.class_name, c.room_no, c.unit
+    const { rows } = await pool.query(`
+      SELECT l.id, l.chemical_id, l.date, c.name AS chemical_name, l.action, l.amount, l."user", l.purpose, l.class_name, c.room_no, c.unit
       FROM logs l
       JOIN chemicals c ON c.id = l.chemical_id
       ORDER BY l.date DESC
@@ -450,8 +435,8 @@ app.get("/api/logs", async (_, res) => {
 
 app.get("/api/reports/low-stock", async (_, res) => {
   try {
-    const [rows] = await pool.query(`
-      SELECT CURDATE() AS report_date, name AS chemical, quantity, unit
+    const { rows } = await pool.query(`
+      SELECT CURRENT_DATE AS report_date, name AS chemical, quantity, unit
       FROM chemicals
       WHERE quantity <= low_stock_quantity
       ORDER BY name ASC
@@ -483,7 +468,7 @@ initDb()
       host: dbConfig.host,
       port: dbConfig.port,
       user: dbConfig.user,
-      database: dbName
+      database: dbConfig.database
     });
     process.exit(1);
   });
