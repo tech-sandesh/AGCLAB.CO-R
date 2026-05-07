@@ -19,6 +19,10 @@ This project made with:
 7. Open browser:
    `http://localhost:3000`
 
+Important:
+- This app now loads environment variables from a local `.env` file using `dotenv`.
+- If `DATABASE_URL` is missing, the server will fall back to `localhost:5432`.
+
 ## Supabase Notes
 1. Use the Supabase Postgres connection string, not the API URL.
 2. The app auto-creates its tables on startup.
